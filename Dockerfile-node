@@ -1,0 +1,39 @@
+FROM node:10.16 as builder
+RUN apt-get update
+RUN apt-get install -y wget curl
+COPY package.json  ./
+RUN npm set progress=false && npm config set depth 0 && npm cache clean --force && npm install && npm install -g @angular/cli@7.3.9
+
+## Storing node modules on a separate layer will prevent unnecessary npm installs at each build
+RUN npm i && mkdir /ng-app && cp -R ./node_modules ./ng-app
+
+WORKDIR /ng-app
+COPY . .
+
+CMD ng serve --host 0.0.0.0 --port 8081 --disableHostCheck true --configuration=dev
+#CMD ["node", "."]
+
+### STAGE 2: Setup ###
+
+FROM nginx:1.15.8
+
+RUN apt-get update && apt-get install -y \
+    apt-utils \
+    nginx-extras
+RUN apt-get install curl -y && apt-get install wget -y
+
+COPY nginx.conf /etc/nginx/
+
+# Copy our default nginx config
+COPY default.conf /etc/nginx/conf.d/
+
+## Remove default nginx website
+RUN rm -rf /usr/share/nginx/html/*
+RUN rm -rf /etc/nginx/sites-available/default
+COPY default /etc/nginx/sites-available/
+RUN true
+COPY --from=builder /ng-app/src/ /usr/share/nginx/html
+
+CMD ["nginx", "-g", "daemon off;"]
+
+EXPOSE 80
